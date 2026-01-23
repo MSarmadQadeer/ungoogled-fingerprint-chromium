@@ -1,0 +1,147 @@
+# Speech Synthesis Voices Spoofing for Profile Grid
+# Spoofs speechSynthesis.getVoices() to return controlled voice list
+# --fingerprint-speech-voices=windows (uses Windows default voices)
+# --fingerprint-speech-voices=macos (uses macOS default voices)
+# --fingerprint-speech-voices=empty (returns empty list like Firefox)
+# --disable-speech-synthesis completely disables the API
+
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+@@ -24,6 +24,9 @@
+
+ #include "third_party/blink/renderer/modules/speech/speech_synthesis.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
+ #include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
+@@ -40,6 +43,90 @@
+
+ namespace blink {
+
++// Command-line switches
++const char kFingerprintSpeechVoices[] = "fingerprint-speech-voices";
++const char kDisableSpeechSynthesis[] = "disable-speech-synthesis";
++
++// Create spoofed voices based on platform preference
++HeapVector<Member<SpeechSynthesisVoice>> CreateSpoofedVoices(
++    const std::string& platform) {
++  HeapVector<Member<SpeechSynthesisVoice>> voices;
++
++  if (platform == "empty" || platform == "none") {
++    // Return empty list (Firefox approach)
++    return voices;
++  }
++
++  if (platform == "windows" || platform == "win") {
++    // Windows 10/11 default voices
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "Microsoft David - English (United States)",
++        "en-US",
++        "urn:moz-tts:sapi:Microsoft David - English (United States)?en-US",
++        true,   // localService
++        false   // default
++    ));
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "Microsoft Zira - English (United States)",
++        "en-US",
++        "urn:moz-tts:sapi:Microsoft Zira - English (United States)?en-US",
++        true,
++        true    // default voice
++    ));
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "Microsoft Mark - English (United States)",
++        "en-US",
++        "urn:moz-tts:sapi:Microsoft Mark - English (United States)?en-US",
++        true,
++        false
++    ));
++  } else if (platform == "macos" || platform == "mac") {
++    // macOS default voices
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "Samantha",
++        "en-US",
++        "com.apple.speech.synthesis.voice.samantha",
++        true,
++        true    // default
++    ));
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "Alex",
++        "en-US",
++        "com.apple.speech.synthesis.voice.Alex",
++        true,
++        false
++    ));
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "Victoria",
++        "en-US",
++        "com.apple.speech.synthesis.voice.Victoria",
++        true,
++        false
++    ));
++  } else if (platform == "linux") {
++    // Linux (eSpeak) voices
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "English",
++        "en",
++        "urn:moz-tts:espeak:en",
++        true,
++        true
++    ));
++  } else {
++    // Default: minimal voice list
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "Google US English",
++        "en-US",
++        "Google US English",
++        false,  // Not local (Google voice)
++        true
++    ));
++    voices.push_back(MakeGarbageCollected<SpeechSynthesisVoice>(
++        "Google UK English Female",
++        "en-GB",
++        "Google UK English Female",
++        false,
++        false
++    ));
++  }
++
++  return voices;
++}
++
+ SpeechSynthesis* SpeechSynthesis::Create(LocalDOMWindow& window) {
+   return MakeGarbageCollected<SpeechSynthesis>(window);
+ }
+@@ -98,8 +185,24 @@ void SpeechSynthesis::OnSetVoiceList(
+
+ const HeapVector<Member<SpeechSynthesisVoice>>& SpeechSynthesis::getVoices() {
+   RecordVoicesForIdentifiability();
++
++  // Check for speech synthesis spoofing
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++
++  if (command_line->HasSwitch(kDisableSpeechSynthesis)) {
++    // Return empty list
++    static HeapVector<Member<SpeechSynthesisVoice>> empty_voices;
++    return empty_voices;
++  }
++
++  if (command_line->HasSwitch(kFingerprintSpeechVoices)) {
++    std::string platform = command_line->GetSwitchValueASCII(kFingerprintSpeechVoices);
++    static HeapVector<Member<SpeechSynthesisVoice>> spoofed_voices = CreateSpoofedVoices(platform);
++    return spoofed_voices;
++  }
++
+   return voice_list_;
+ }
+
+ bool SpeechSynthesis::speaking() const {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kDisableSpeechSynthesis)) {
++    return false;
++  }
+   // If we have a current speech utterance, it means we're speaking.
+   return CurrentSpeechUtterance();
+ }

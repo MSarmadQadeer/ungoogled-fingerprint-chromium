@@ -1,0 +1,120 @@
+# Battery API Spoofing for Profile Grid
+# Allows spoofing battery level and charging status via command-line flags
+# --fingerprint-battery-level=0.85 --fingerprint-battery-charging=true
+# --disable-battery-api completely disables the API
+
+--- a/services/device/battery/battery_status_service.cc
++++ b/services/device/battery/battery_status_service.cc
+@@ -4,6 +4,8 @@
+
+ #include "services/device/battery/battery_status_service.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/functional/bind.h"
+ #include "base/location.h"
+ #include "base/task/single_thread_task_runner.h"
+@@ -11,6 +13,10 @@
+
+ namespace device {
+
++// Command-line switches for battery spoofing
++const char kFingerprintBatteryLevel[] = "fingerprint-battery-level";
++const char kFingerprintBatteryCharging[] = "fingerprint-battery-charging";
++const char kDisableBatteryAPI[] = "disable-battery-api";
++
+ BatteryStatusService::BatteryStatusService()
+     : main_thread_task_runner_(
+           base::SingleThreadTaskRunner::GetCurrentDefault()),
+@@ -37,6 +43,34 @@ base::CallbackListSubscription BatterySt
+   DCHECK(main_thread_task_runner_->BelongsToCurrentThread());
+   DCHECK(!is_shutdown_);
+
++  // Check if battery API is disabled
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kDisableBatteryAPI)) {
++    // Return undefined/error - API is disabled
++    callback.Run(mojom::BatteryStatus());
++    return callback_list_.Add(callback);
++  }
++
++  // Check for spoofed battery values
++  if (command_line->HasSwitch(kFingerprintBatteryLevel) ||
++      command_line->HasSwitch(kFingerprintBatteryCharging)) {
++    mojom::BatteryStatus spoofed_status;
++
++    // Default to full battery, plugged in (common desktop scenario)
++    spoofed_status.level = 1.0;
++    spoofed_status.charging = true;
++    spoofed_status.charging_time = 0;
++    spoofed_status.discharging_time = std::numeric_limits<double>::infinity();
++
++    if (command_line->HasSwitch(kFingerprintBatteryLevel)) {
++      double level;
++      if (base::StringToDouble(command_line->GetSwitchValueASCII(kFingerprintBatteryLevel), &level)) {
++        spoofed_status.level = std::clamp(level, 0.0, 1.0);
++      }
++    }
++
++    if (command_line->HasSwitch(kFingerprintBatteryCharging)) {
++      std::string charging_str = command_line->GetSwitchValueASCII(kFingerprintBatteryCharging);
++      spoofed_status.charging = (charging_str == "true" || charging_str == "1");
++
++      if (spoofed_status.charging) {
++        // Calculate charging time based on level
++        spoofed_status.charging_time = (1.0 - spoofed_status.level) * 3600; // 1 hour to full
++        spoofed_status.discharging_time = std::numeric_limits<double>::infinity();
++      } else {
++        // Calculate discharging time based on level
++        spoofed_status.charging_time = std::numeric_limits<double>::infinity();
++        spoofed_status.discharging_time = spoofed_status.level * 14400; // 4 hours battery life
++      }
++    }
++
++    callback.Run(spoofed_status);
++    return callback_list_.Add(callback);
++  }
++
++  // Default behavior: return real battery status or default
+   if (!battery_fetcher_)
+     battery_fetcher_ = BatteryStatusManager::Create(update_callback_);
+
+--- a/third_party/blink/renderer/modules/battery/battery_manager.cc
++++ b/third_party/blink/renderer/modules/battery/battery_manager.cc
+@@ -4,6 +4,8 @@
+
+ #include "third_party/blink/renderer/modules/battery/battery_manager.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+@@ -13,6 +15,9 @@
+
+ namespace blink {
+
++// Command-line switch to disable battery API
++const char kDisableBatteryAPI[] = "disable-battery-api";
++
+ BatteryManager* BatteryManager::Create(ExecutionContext* context) {
+   BatteryManager* battery_manager =
+       MakeGarbageCollected<BatteryManager>(context);
+@@ -31,6 +36,17 @@ BatteryManager::~BatteryManager() = defa
+
+ ScriptPromise<BatteryManager> BatteryManager::StartRequest(
+     ScriptState* script_state) {
++  // Check if battery API is disabled via command-line
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kDisableBatteryAPI)) {
++    // Reject the promise - API is disabled
++    return ScriptPromise<BatteryManager>::Reject(
++        script_state,
++        MakeGarbageCollected<DOMException>(
++            DOMExceptionCode::kNotSupportedError,
++            "Battery Status API is not available."));
++  }
++
+   if (!battery_property_) {
+     battery_property_ =
+         MakeGarbageCollected<BatteryProperty>(GetExecutionContext());

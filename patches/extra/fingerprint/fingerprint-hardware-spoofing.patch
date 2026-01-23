@@ -1,0 +1,256 @@
+# Hardware & Navigator Spoofing for Profile Grid
+# Spoofs navigator.hardwareConcurrency, navigator.deviceMemory,
+# navigator.platform, navigator.userAgent, screen properties
+# --fingerprint-hardware-concurrency=8
+# --fingerprint-device-memory=8
+# --fingerprint-platform="Win32"
+# --fingerprint-user-agent="Mozilla/5.0..."
+# --fingerprint-screen-width=1920 --fingerprint-screen-height=1080
+# --fingerprint-device-pixel-ratio=1.0
+
+--- a/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
++++ b/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
+@@ -4,6 +4,8 @@
+
+ #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/system/sys_info.h"
+ #include "build/build_config.h"
+
+@@ -13,9 +15,22 @@
+
+ namespace blink {
+
++// Command-line switch for hardware concurrency spoofing
++const char kFingerprintHardwareConcurrency[] = "fingerprint-hardware-concurrency";
++
+ unsigned NavigatorConcurrentHardware::hardwareConcurrency() const {
+-  // TODO(simonjam): Use a different function for when we decide to
+-  // expose more or less cores to workers.
++  // Check for spoofed value
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintHardwareConcurrency)) {
++    unsigned spoofed_cores = 0;
++    if (base::StringToUint(
++            command_line->GetSwitchValueASCII(kFingerprintHardwareConcurrency),
++            &spoofed_cores)) {
++      // Clamp to reasonable values (1-64)
++      return std::clamp(spoofed_cores, 1u, 64u);
++    }
++  }
++
+   return static_cast<unsigned>(base::SysInfo::NumberOfProcessors());
+ }
+
+--- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
++++ b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+@@ -4,14 +4,35 @@
+
+ #include "third_party/blink/renderer/core/frame/navigator_device_memory.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+
+ namespace blink {
+
++// Command-line switch for device memory spoofing
++const char kFingerprintDeviceMemory[] = "fingerprint-device-memory";
++
+ float NavigatorDeviceMemory::deviceMemory() const {
+   LocalDOMWindow* window = GetSupplementable()->DomWindow();
+-  return window ? window->GetFrame()->GetDeviceMemory() : 0.0;
++
++  // Check for spoofed value
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintDeviceMemory)) {
++    double spoofed_memory = 0;
++    if (base::StringToDouble(
++            command_line->GetSwitchValueASCII(kFingerprintDeviceMemory),
++            &spoofed_memory)) {
++      // Valid deviceMemory values: 0.25, 0.5, 1, 2, 4, 8
++      // Clamp to reasonable range
++      return static_cast<float>(std::clamp(spoofed_memory, 0.25, 8.0));
++    }
++  }
++
++  if (!window)
++    return 0.0;
++  return window->GetFrame()->GetDeviceMemory();
+ }
+
+ }  // namespace blink
+--- a/third_party/blink/renderer/core/frame/screen.cc
++++ b/third_party/blink/renderer/core/frame/screen.cc
+@@ -30,6 +30,8 @@
+
+ #include "third_party/blink/renderer/core/frame/screen.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/renderer/core/css/media_query_evaluator.h"
+ #include "third_party/blink/renderer/core/event_target_names.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+@@ -42,6 +44,12 @@
+
+ namespace blink {
+
++// Command-line switches for screen spoofing
++const char kFingerprintScreenWidth[] = "fingerprint-screen-width";
++const char kFingerprintScreenHeight[] = "fingerprint-screen-height";
++const char kFingerprintDevicePixelRatio[] = "fingerprint-device-pixel-ratio";
++const char kFingerprintColorDepth[] = "fingerprint-color-depth";
++
+ Screen::Screen(LocalDOMWindow* window, bool use_inner_for_avail)
+     : ExecutionContextClient(window), use_inner_for_avail_(use_inner_for_avail) {}
+
+@@ -57,14 +65,32 @@ int Screen::height() const {
+   if (!DomWindow())
+     return 0;
+   LocalFrame* frame = DomWindow()->GetFrame();
++
++  // Check for spoofed height
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintScreenHeight)) {
++    int spoofed_height = 0;
++    if (base::StringToInt(
++            command_line->GetSwitchValueASCII(kFingerprintScreenHeight),
++            &spoofed_height)) {
++      return spoofed_height;
++    }
++  }
++
+   return frame ? frame->GetChromeClient().GetScreenInfo(*frame).rect.height()
+                : 0;
+ }
+
+ int Screen::width() const {
+-  if (!DomWindow())
+-    return 0;
++  if (!DomWindow()) return 0;
+   LocalFrame* frame = DomWindow()->GetFrame();
++
++  // Check for spoofed width
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintScreenWidth)) {
++    int spoofed_width = 0;
++    if (base::StringToInt(
++            command_line->GetSwitchValueASCII(kFingerprintScreenWidth),
++            &spoofed_width)) {
++      return spoofed_width;
++    }
++  }
++
+   return frame ? frame->GetChromeClient().GetScreenInfo(*frame).rect.width()
+                : 0;
+ }
+
+ unsigned Screen::colorDepth() const {
+   if (!DomWindow())
+     return 0;
++
++  // Check for spoofed color depth
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintColorDepth)) {
++    int spoofed_depth = 0;
++    if (base::StringToInt(
++            command_line->GetSwitchValueASCII(kFingerprintColorDepth),
++            &spoofed_depth)) {
++      return static_cast<unsigned>(spoofed_depth);
++    }
++  }
++
+   LocalFrame* frame = DomWindow()->GetFrame();
+   return frame
+              ? static_cast<unsigned>(
+--- a/third_party/blink/renderer/core/frame/dom_window.cc
++++ b/third_party/blink/renderer/core/frame/dom_window.cc
+@@ -4,6 +4,8 @@
+
+ #include "third_party/blink/renderer/core/frame/dom_window.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include <memory>
+
+ #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+@@ -31,6 +33,9 @@
+
+ namespace blink {
+
++// Command-line switch for device pixel ratio spoofing
++const char kFingerprintDevicePixelRatioDOMWindow[] = "fingerprint-device-pixel-ratio";
++
+ DOMWindow::DOMWindow(Frame& frame)
+     : frame_(frame),
+       input_capabilities_(nullptr),
+@@ -41,6 +46,17 @@ DOMWindow::~DOMWindow() {
+ }
+
+ double DOMWindow::devicePixelRatio() const {
++  // Check for spoofed device pixel ratio
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintDevicePixelRatioDOMWindow)) {
++    double spoofed_ratio = 0;
++    if (base::StringToDouble(
++            command_line->GetSwitchValueASCII(kFingerprintDevicePixelRatioDOMWindow),
++            &spoofed_ratio)) {
++      return std::clamp(spoofed_ratio, 0.5, 4.0);
++    }
++  }
++
+   if (!GetFrame())
+     return 0.0;
+
+--- a/third_party/blink/renderer/core/frame/navigator_id.cc
++++ b/third_party/blink/renderer/core/frame/navigator_id.cc
+@@ -30,6 +30,7 @@
+
+ #include "third_party/blink/renderer/core/frame/navigator_id.h"
+
++#include "base/command_line.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/frame/navigator_ua_data.h"
+@@ -37,6 +38,10 @@
+
+ namespace blink {
+
++// Command-line switches for navigator spoofing
++const char kFingerprintUserAgent[] = "fingerprint-user-agent";
++const char kFingerprintPlatform[] = "fingerprint-platform";
++
+ String NavigatorID::appCodeName() {
+   return "Mozilla";
+ }
+@@ -58,12 +63,26 @@ String NavigatorID::appVersion(ScriptSta
+
+ String NavigatorID::platform(ScriptState* script_state) const {
+   ExecutionContext* execution_context = ExecutionContext::From(script_state);
++
++  // Check for spoofed platform
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintPlatform)) {
++    return String(command_line->GetSwitchValueASCII(kFingerprintPlatform).c_str());
++  }
++
+   return NavigatorUAData::GetPlatform(execution_context);
+ }
+
+ String NavigatorID::userAgent(ScriptState* script_state) const {
+   ExecutionContext* execution_context = ExecutionContext::From(script_state);
+-  return GetSupplementable()->UserAgent();
++
++  // Check for spoofed user agent
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintUserAgent)) {
++    return String(command_line->GetSwitchValueASCII(kFingerprintUserAgent).c_str());
++  }
++
++  return GetSupplementable()->UserAgent();
+ }
+
+ NavigatorUAData* NavigatorID::userAgentData() {

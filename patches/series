@@ -109,3 +109,36 @@ extra/ungoogled-chromium/add-flag-to-spoof-webgl-renderer-info.patch
 extra/ungoogled-chromium/add-flag-to-increase-incognito-storage-quota.patch
 extra/ungoogled-chromium/add-credits.patch
 extra/ungoogled-chromium/disable-ai-search-shortcuts.patch
+
+# ============================================================================
+# Profile Grid Fingerprint Spoofing Patches
+# ============================================================================
+# These patches add comprehensive fingerprint spoofing capabilities
+# for the Profile Grid anti-detect browser.
+
+# Add command-line switches for all fingerprint features
+extra/fingerprint/add-fingerprint-switches.patch
+
+# Battery API spoofing (--fingerprint-battery-level, --disable-battery-api)
+extra/fingerprint/fingerprint-battery-api-spoofing.patch
+
+# Media Devices spoofing (--fingerprint-media-devices)
+extra/fingerprint/fingerprint-media-devices-spoofing.patch
+
+# Speech Synthesis spoofing (--fingerprint-speech-voices, --disable-speech-synthesis)
+extra/fingerprint/fingerprint-speech-synthesis-spoofing.patch
+
+# Network Information API spoofing (--fingerprint-network-type, --disable-network-info-api)
+extra/fingerprint/fingerprint-network-info-spoofing.patch
+
+# WebGL Vendor/Renderer spoofing (--fingerprint-webgl-vendor, --fingerprint-webgl-renderer)
+extra/fingerprint/fingerprint-webgl-spoofing.patch
+
+# Audio Context fingerprinting noise (--fingerprinting-audio-noise)
+extra/fingerprint/fingerprint-audio-noise.patch
+
+# Block APIs: Gamepad, Bluetooth, USB, Sensors
+extra/fingerprint/fingerprint-block-apis.patch
+
+# Hardware/Navigator spoofing (hardwareConcurrency, deviceMemory, platform, userAgent, screen)
+extra/fingerprint/fingerprint-hardware-spoofing.patch

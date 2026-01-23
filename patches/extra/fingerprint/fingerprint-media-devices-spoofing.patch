@@ -1,0 +1,135 @@
+# Media Devices API Spoofing for Profile Grid
+# Spoofs navigator.mediaDevices.enumerateDevices() to return fake device IDs
+# --fingerprint-media-devices=audio:2,video:1,audiooutput:1
+# This prevents device fingerprinting via camera/microphone enumeration
+
+--- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
++++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
+@@ -4,6 +4,10 @@
+
+ #include "third_party/blink/renderer/modules/mediastream/media_devices.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++#include "base/rand_util.h"
+ #include "mojo/public/cpp/bindings/remote.h"
+ #include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
+ #include "third_party/blink/public/mojom/media/capture_handle_config.mojom-blink.h"
+@@ -26,6 +30,9 @@
+
+ namespace blink {
+
++// Command-line switch for media devices spoofing
++const char kFingerprintMediaDevices[] = "fingerprint-media-devices";
++
+ namespace {
+
+ template <typename IDLResolvedType>
+@@ -33,6 +40,79 @@ class PromiseResolverCallbacks;
+
+ }  // namespace
+
++// Generate a deterministic fake device ID based on profile seed
++String GenerateFakeDeviceId(const String& kind, int index, uint64_t seed) {
++  // Create a deterministic hash for consistent device IDs per profile
++  uint64_t hash = seed;
++  for (wtf_size_t i = 0; i < kind.length(); i++) {
++    hash = hash * 31 + kind[i];
++  }
++  hash = hash * 31 + index;
++
++  // Format as a device ID (similar to real Chrome device IDs)
++  char buffer[65];
++  snprintf(buffer, sizeof(buffer),
++           "%016llx%016llx%016llx%016llx",
++           (unsigned long long)(hash),
++           (unsigned long long)(hash ^ 0xDEADBEEF),
++           (unsigned long long)(hash ^ 0xCAFEBABE),
++           (unsigned long long)(hash ^ 0x12345678));
++  return String(buffer);
++}
++
++// Parse media devices config: "audio:2,video:1,audiooutput:1"
++HeapVector<Member<MediaDeviceInfo>> CreateSpoofedDevices(
++    ExecutionContext* context,
++    const std::string& config) {
++  HeapVector<Member<MediaDeviceInfo>> devices;
++
++  // Parse config string
++  int audio_inputs = 1;
++  int video_inputs = 1;
++  int audio_outputs = 1;
++
++  std::vector<std::string> parts = base::SplitString(
++      config, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++
++  for (const auto& part : parts) {
++    std::vector<std::string> kv = base::SplitString(
++        part, ":", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++    if (kv.size() == 2) {
++      int count = 0;
++      base::StringToInt(kv[1], &count);
++      if (kv[0] == "audio") audio_inputs = count;
++      else if (kv[0] == "video") video_inputs = count;
++      else if (kv[0] == "audiooutput") audio_outputs = count;
++    }
++  }
++
++  // Use a seed based on origin for consistent device IDs per site
++  uint64_t seed = base::RandUint64();
++
++  // Create fake audio inputs
++  for (int i = 0; i < audio_inputs; i++) {
++    String device_id = GenerateFakeDeviceId("audioinput", i, seed);
++    String group_id = GenerateFakeDeviceId("group-audio", i, seed);
++    String label = i == 0 ? "Default Microphone" : String::Format("Microphone %d", i + 1);
++    devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
++        device_id, label, group_id, "audioinput"));
++  }
++
++  // Create fake video inputs
++  for (int i = 0; i < video_inputs; i++) {
++    String device_id = GenerateFakeDeviceId("videoinput", i, seed);
++    String group_id = GenerateFakeDeviceId("group-video", i, seed);
++    String label = i == 0 ? "Integrated Camera" : String::Format("Camera %d", i + 1);
++    devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
++        device_id, label, group_id, "videoinput"));
++  }
++
++  // Create fake audio outputs
++  for (int i = 0; i < audio_outputs; i++) {
++    String device_id = GenerateFakeDeviceId("audiooutput", i, seed);
++    String group_id = GenerateFakeDeviceId("group-audioout", i, seed);
++    String label = i == 0 ? "Default Speakers" : String::Format("Speakers %d", i + 1);
++    devices.push_back(MakeGarbageCollected<MediaDeviceInfo>(
++        device_id, label, group_id, "audiooutput"));
++  }
++
++  return devices;
++}
++
+ const char MediaDevices::kSupplementName[] = "MediaDevices";
+
+ MediaDevices* MediaDevices::mediaDevices(Navigator& navigator) {
+@@ -102,6 +182,20 @@ ScriptPromise<IDLSequence<MediaDeviceInf
+     ScriptState* script_state,
+     ExceptionState& exception_state) {
+   UpdateMediaDevices();
++
++  // Check for spoofed media devices
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kFingerprintMediaDevices)) {
++    std::string config = command_line->GetSwitchValueASCII(kFingerprintMediaDevices);
++    HeapVector<Member<MediaDeviceInfo>> spoofed_devices =
++        CreateSpoofedDevices(GetExecutionContext(), config);
++
++    return ToResolvedPromise<IDLSequence<MediaDeviceInfo>>(
++        script_state,
++        spoofed_devices,
++        exception_state);
++  }
++
+   auto* resolver =
+       MakeGarbageCollected<ScriptPromiseResolver<IDLSequence<MediaDeviceInfo>>>(
+           script_state, exception_state.GetContext());

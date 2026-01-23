@@ -1,0 +1,138 @@
+# WebGL Vendor/Renderer Spoofing for Profile Grid
+# Spoofs WEBGL_debug_renderer_info extension results
+# --fingerprint-webgl-vendor="Intel Inc."
+# --fingerprint-webgl-renderer="Intel(R) UHD Graphics 620"
+
+--- a/gpu/command_buffer/service/webgl_debug_renderer_info.cc
++++ b/gpu/command_buffer/service/webgl_debug_renderer_info.cc
+@@ -0,0 +1,45 @@
++// Copyright 2024 Profile Grid. Fingerprint spoofing support.
++
++#include "gpu/command_buffer/service/webgl_debug_renderer_info.h"
++
++#include "base/command_line.h"
++
++namespace gpu {
++
++const char kFingerprintWebGLVendor[] = "fingerprint-webgl-vendor";
++const char kFingerprintWebGLRenderer[] = "fingerprint-webgl-renderer";
++
++bool ShouldSpoofWebGLInfo(std::string* vendor, std::string* renderer) {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++
++  bool should_spoof = false;
++
++  if (command_line->HasSwitch(kFingerprintWebGLVendor)) {
++    *vendor = command_line->GetSwitchValueASCII(kFingerprintWebGLVendor);
++    should_spoof = true;
++  }
++
++  if (command_line->HasSwitch(kFingerprintWebGLRenderer)) {
++    *renderer = command_line->GetSwitchValueASCII(kFingerprintWebGLRenderer);
++    should_spoof = true;
++  }
++
++  return should_spoof;
++}
++
++}  // namespace gpu
++--- /dev/null
++++ b/gpu/command_buffer/service/webgl_debug_renderer_info.h
+@@ -0,0 +1,22 @@
++// Copyright 2024 Profile Grid. Fingerprint spoofing support.
++
++#ifndef GPU_COMMAND_BUFFER_SERVICE_WEBGL_DEBUG_RENDERER_INFO_H_
++#define GPU_COMMAND_BUFFER_SERVICE_WEBGL_DEBUG_RENDERER_INFO_H_
++
++#include <string>
++
++namespace gpu {
++
++// Command-line switches
++extern const char kFingerprintWebGLVendor[];
++extern const char kFingerprintWebGLRenderer[];
++
++// Check if WebGL renderer info should be spoofed
++// Returns true if spoofing is enabled, and fills vendor/renderer with spoofed values
++bool ShouldSpoofWebGLInfo(std::string* vendor, std::string* renderer);
++
++}  // namespace gpu
++
++#endif  // GPU_COMMAND_BUFFER_SERVICE_WEBGL_DEBUG_RENDERER_INFO_H_
++--- a/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.cc
+@@ -26,6 +26,8 @@
+
+ #include "third_party/blink/renderer/modules/webgl/webgl_debug_renderer_info.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_util.h"
+ #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
+
+ namespace blink {
+@@ -35,6 +37,10 @@ WebGLDebugRendererInfo::WebGLDebugRender
+     : WebGLExtension(context) {
+ }
+
++// Command-line switches
++const char kFingerprintWebGLVendor[] = "fingerprint-webgl-vendor";
++const char kFingerprintWebGLRenderer[] = "fingerprint-webgl-renderer";
++
+ WebGLExtensionName WebGLDebugRendererInfo::GetName() const {
+   return kWebGLDebugRendererInfoName;
+ }
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -25,6 +25,8 @@
+
+ #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_util.h"
+ #include <memory>
+ #include <utility>
+
+@@ -134,6 +136,10 @@
+
+ namespace blink {
+
++// Command-line switches for WebGL spoofing
++const char kFingerprintWebGLVendor[] = "fingerprint-webgl-vendor";
++const char kFingerprintWebGLRenderer[] = "fingerprint-webgl-renderer";
++
+ namespace {
+
+ // A "
+@@ -3038,10 +3044,30 @@ ScriptValue WebGLRenderingContextBase::g
+       }
+       return ScriptValue(script_state->GetIsolate(), array);
+     }
+-    case GL_UNMASKED_RENDERER_WEBGL:
+-      return WebGLAny(script_state, String(ContextGL()->GetString(GL_RENDERER)));
+-    case GL_UNMASKED_VENDOR_WEBGL:
+-      return WebGLAny(script_state, String(ContextGL()->GetString(GL_VENDOR)));
++    case GL_UNMASKED_RENDERER_WEBGL: {
++      // Check for spoofed renderer
++      const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++      if (command_line->HasSwitch(kFingerprintWebGLRenderer)) {
++        std::string spoofed_renderer =
++            command_line->GetSwitchValueASCII(kFingerprintWebGLRenderer);
++        return WebGLAny(script_state, String(spoofed_renderer.c_str()));
++      }
++      return WebGLAny(script_state,
++                      String(ContextGL()->GetString(GL_RENDERER)));
++    }
++    case GL_UNMASKED_VENDOR_WEBGL: {
++      // Check for spoofed vendor
++      const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++      if (command_line->HasSwitch(kFingerprintWebGLVendor)) {
++        std::string spoofed_vendor =
++            command_line->GetSwitchValueASCII(kFingerprintWebGLVendor);
++        return WebGLAny(script_state, String(spoofed_vendor.c_str()));
++      }
++      return WebGLAny(script_state,
++                      String(ContextGL()->GetString(GL_VENDOR)));
++    }
+     default:
+       SynthesizeGLError(GL_INVALID_ENUM, "getParameter", "invalid parameter");
+       return ScriptValue::CreateNull(script_state->GetIsolate());

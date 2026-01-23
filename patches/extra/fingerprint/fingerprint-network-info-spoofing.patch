@@ -1,0 +1,193 @@
+# Network Information API Spoofing for Profile Grid
+# Spoofs navigator.connection to return controlled network info
+# --fingerprint-network-effective-type=4g
+# --fingerprint-network-type=wifi
+# --disable-network-info-api completely disables the API
+
+--- a/third_party/blink/renderer/modules/netinfo/network_information.cc
++++ b/third_party/blink/renderer/modules/netinfo/network_information.cc
+@@ -4,6 +4,8 @@
+
+ #include "third_party/blink/renderer/modules/netinfo/network_information.h"
+
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/public/mojom/devtools/console_message.mojom-blink.h"
+ #include "third_party/blink/public/platform/task_type.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_connection_type.h"
+@@ -19,6 +21,11 @@
+
+ namespace blink {
+
++// Command-line switches
++const char kFingerprintNetworkType[] = "fingerprint-network-type";
++const char kFingerprintNetworkEffectiveType[] = "fingerprint-network-effective-type";
++const char kDisableNetworkInfoAPI[] = "disable-network-info-api";
++
+ namespace {
+
+ String ConnectionTypeToString(WebConnectionType type) {
+@@ -70,6 +77,74 @@ EffectiveConnectionType StringToEffectiv
+   return EffectiveConnectionType::kTypeUnknown;
+ }
+
++// Parse network type from string
++WebConnectionType ParseNetworkType(const std::string& type_str) {
++  if (type_str == "wifi") return kWebConnectionTypeWifi;
++  if (type_str == "ethernet") return kWebConnectionTypeEthernet;
++  if (type_str == "cellular") return kWebConnectionTypeCellular4G;
++  if (type_str == "4g") return kWebConnectionTypeCellular4G;
++  if (type_str == "3g") return kWebConnectionTypeCellular3G;
++  if (type_str == "2g") return kWebConnectionTypeCellular2G;
++  if (type_str == "bluetooth") return kWebConnectionTypeBluetooth;
++  if (type_str == "none") return kWebConnectionTypeNone;
++  return kWebConnectionTypeWifi;  // Default to wifi
++}
++
++// Parse effective connection type from string
++EffectiveConnectionType ParseEffectiveType(const std::string& type_str) {
++  if (type_str == "4g") return EffectiveConnectionType::kType4G;
++  if (type_str == "3g") return EffectiveConnectionType::kType3G;
++  if (type_str == "2g") return EffectiveConnectionType::kType2G;
++  if (type_str == "slow-2g") return EffectiveConnectionType::kTypeSlow2G;
++  return EffectiveConnectionType::kType4G;  // Default to 4g
++}
++
++// Get downlink speed based on effective type
++double GetDownlinkForEffectiveType(EffectiveConnectionType type) {
++  switch (type) {
++    case EffectiveConnectionType::kType4G:
++      return 10.0;  // 10 Mbps
++    case EffectiveConnectionType::kType3G:
++      return 1.5;   // 1.5 Mbps
++    case EffectiveConnectionType::kType2G:
++      return 0.3;   // 300 Kbps
++    case EffectiveConnectionType::kTypeSlow2G:
++      return 0.05;  // 50 Kbps
++    default:
++      return 10.0;
++  }
++}
++
++// Get RTT based on effective type
++unsigned long GetRttForEffectiveType(EffectiveConnectionType type) {
++  switch (type) {
++    case EffectiveConnectionType::kType4G:
++      return 50;    // 50ms
++    case EffectiveConnectionType::kType3G:
++      return 300;   // 300ms
++    case EffectiveConnectionType::kType2G:
++      return 700;   // 700ms
++    case EffectiveConnectionType::kTypeSlow2G:
++      return 2000;  // 2000ms
++    default:
++      return 50;
++  }
++}
++
++// Check if network info API is disabled or spoofed
++bool ShouldSpoofNetworkInfo(WebConnectionType* out_type,
++                            EffectiveConnectionType* out_effective_type) {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++
++  if (command_line->HasSwitch(kFingerprintNetworkType) ||
++      command_line->HasSwitch(kFingerprintNetworkEffectiveType)) {
++    *out_type = ParseNetworkType(
++        command_line->GetSwitchValueASCII(kFingerprintNetworkType));
++    *out_effective_type = ParseEffectiveType(
++        command_line->GetSwitchValueASCII(kFingerprintNetworkEffectiveType));
++    return true;
++  }
++
++  return false;
++}
++
+ }  // namespace
+
+ NetworkInformation* NetworkInformation::connection(NavigatorBase& navigator) {
+@@ -94,16 +169,46 @@ NetworkInformation::~NetworkInformation(
+ }
+
+ V8ConnectionType NetworkInformation::type() const {
++  // Check for spoofing
++  WebConnectionType spoofed_type;
++  EffectiveConnectionType spoofed_effective;
++  if (ShouldSpoofNetworkInfo(&spoofed_type, &spoofed_effective)) {
++    return V8ConnectionType(StringToConnectionType(
++        ConnectionTypeToString(spoofed_type)));
++  }
++
+   return V8ConnectionType(
+       StringToConnectionType(ConnectionTypeToString(type_)));
+ }
+
+ double NetworkInformation::downlinkMax() const {
++  // Check for spoofing
++  WebConnectionType spoofed_type;
++  EffectiveConnectionType spoofed_effective;
++  if (ShouldSpoofNetworkInfo(&spoofed_type, &spoofed_effective)) {
++    return GetDownlinkForEffectiveType(spoofed_effective);
++  }
++
+   return GetDownlinkMaxMbps(type_);
+ }
+
+ V8EffectiveConnectionType NetworkInformation::effectiveType() {
++  // Check if API is disabled
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kDisableNetworkInfoAPI)) {
++    return V8EffectiveConnectionType(V8EffectiveConnectionType::Enum::k4g);
++  }
++
++  // Check for spoofing
++  WebConnectionType spoofed_type;
++  EffectiveConnectionType spoofed_effective;
++  if (ShouldSpoofNetworkInfo(&spoofed_type, &spoofed_effective)) {
++    return V8EffectiveConnectionType(
++        StringToEffectiveConnectionType(
++            EffectiveConnectionTypeToString(spoofed_effective)));
++  }
++
+   std::optional<base::TimeDelta> http_rtt = GetHttpRTT();
+   std::optional<double> downlink_mbps = GetDownlinkMbps();
+
+@@ -112,6 +217,15 @@ V8EffectiveConnectionType NetworkInforma
+ }
+
+ unsigned long NetworkInformation::rtt() {
++  // Check for spoofing
++  WebConnectionType spoofed_type;
++  EffectiveConnectionType spoofed_effective;
++  if (ShouldSpoofNetworkInfo(&spoofed_type, &spoofed_effective)) {
++    return GetRttForEffectiveType(spoofed_effective);
++  }
++
+   std::optional<base::TimeDelta> http_rtt = GetHttpRTT();
+   if (!http_rtt.has_value()) {
+     return 0;
+@@ -121,6 +235,13 @@ unsigned long NetworkInformation::rtt()
+ }
+
+ double NetworkInformation::downlink() {
++  // Check for spoofing
++  WebConnectionType spoofed_type;
++  EffectiveConnectionType spoofed_effective;
++  if (ShouldSpoofNetworkInfo(&spoofed_type, &spoofed_effective)) {
++    return GetDownlinkForEffectiveType(spoofed_effective);
++  }
++
+   std::optional<double> downlink_mbps = GetDownlinkMbps();
+   if (!downlink_mbps.has_value()) {
+     return 0;
+@@ -130,6 +251,12 @@ double NetworkInformation::downlink() {
+ }
+
+ bool NetworkInformation::saveData() const {
++  // Check if API is disabled or spoofed - always return false
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++  if (command_line->HasSwitch(kDisableNetworkInfoAPI) ||
++      command_line->HasSwitch(kFingerprintNetworkEffectiveType)) {
++    return false;
++  }
+   return GetSaveDataFromNetworkStateNotifier();
+ }

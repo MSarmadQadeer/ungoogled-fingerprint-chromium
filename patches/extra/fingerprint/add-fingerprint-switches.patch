@@ -1,0 +1,125 @@
+# Add fingerprinting command-line switches for Profile Grid anti-detect browser
+# These switches allow spoofing various browser fingerprint vectors at the engine level
+
+--- a/components/ungoogled/ungoogled_switches.cc
++++ b/components/ungoogled/ungoogled_switches.cc
+@@ -15,4 +15,54 @@ const char kFingerprintingCanvasMeasureT
+ // Enable fingerprinting deception for Canvas image data
+ const char kFingerprintingCanvasImageDataNoise[] = "fingerprinting-canvas-image-data-noise";
+
++// ============================================================================
++// Profile Grid Fingerprint Spoofing Switches
++// ============================================================================
++
++// WebGL Renderer/Vendor spoofing
++const char kFingerprintWebGLVendor[] = "fingerprint-webgl-vendor";
++const char kFingerprintWebGLRenderer[] = "fingerprint-webgl-renderer";
++
++// Audio context fingerprinting noise
++const char kFingerprintingAudioNoise[] = "fingerprinting-audio-noise";
++const char kFingerprintingAudioSeed[] = "fingerprint-audio-seed";
++
++// Hardware spoofing
++const char kFingerprintHardwareConcurrency[] = "fingerprint-hardware-concurrency";
++const char kFingerprintDeviceMemory[] = "fingerprint-device-memory";
++
++// Screen spoofing
++const char kFingerprintScreenWidth[] = "fingerprint-screen-width";
++const char kFingerprintScreenHeight[] = "fingerprint-screen-height";
++const char kFingerprintDevicePixelRatio[] = "fingerprint-device-pixel-ratio";
++
++// User agent spoofing
++const char kFingerprintUserAgent[] = "fingerprint-user-agent";
++const char kFingerprintPlatform[] = "fingerprint-platform";
++const char kFingerprintLanguage[] = "fingerprint-language";
++
++// Timezone spoofing
++const char kFingerprintTimezone[] = "fingerprint-timezone";
++const char kFingerprintTimezoneOffset[] = "fingerprint-timezone-offset";
++
++// Media devices spoofing
++const char kFingerprintMediaDevices[] = "fingerprint-media-devices";
++const char kFingerprintMediaDevicesCount[] = "fingerprint-media-devices-count";
++
++// Battery API control
++const char kFingerprintBatteryLevel[] = "fingerprint-battery-level";
++const char kFingerprintBatteryCharging[] = "fingerprint-battery-charging";
++const char kDisableBatteryAPI[] = "disable-battery-api";
++
++// Network Information API control
++const char kFingerprintNetworkType[] = "fingerprint-network-type";
++const char kFingerprintNetworkEffectiveType[] = "fingerprint-network-effective-type";
++const char kDisableNetworkInfoAPI[] = "disable-network-info-api";
++
++// Speech synthesis spoofing
++const char kFingerprintSpeechVoices[] = "fingerprint-speech-voices";
++const char kDisableSpeechSynthesis[] = "disable-speech-synthesis";
++
++// API blocking switches
++const char kDisableGamepadAPI[] = "disable-gamepad-api";
++const char kDisableBluetoothAPI[] = "disable-bluetooth-api";
++const char kDisableUSBAPI[] = "disable-usb-api";
++
+ }  // namespace switches
+--- a/components/ungoogled/ungoogled_switches.h
++++ b/components/ungoogled/ungoogled_switches.h
+@@ -15,6 +15,51 @@ COMPONENT_EXPORT(UNGOOGLED) extern const
+ COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintingCanvasMeasureTextNoise[];
+ COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintingCanvasImageDataNoise[];
+
++// ============================================================================
++// Profile Grid Fingerprint Spoofing Switches
++// ============================================================================
++
++// WebGL spoofing
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintWebGLVendor[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintWebGLRenderer[];
++
++// Audio context fingerprinting
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintingAudioNoise[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintingAudioSeed[];
++
++// Hardware spoofing
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintHardwareConcurrency[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintDeviceMemory[];
++
++// Screen spoofing
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintScreenWidth[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintScreenHeight[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintDevicePixelRatio[];
++
++// User agent spoofing
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintUserAgent[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintPlatform[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintLanguage[];
++
++// Timezone spoofing
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintTimezone[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintTimezoneOffset[];
++
++// Media devices spoofing
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintMediaDevices[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintMediaDevicesCount[];
++
++// Battery API
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintBatteryLevel[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintBatteryCharging[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kDisableBatteryAPI[];
++
++// Network Information API
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintNetworkType[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintNetworkEffectiveType[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kDisableNetworkInfoAPI[];
++
++// Speech synthesis
++COMPONENT_EXPORT(UNGOOGLED) extern const char kFingerprintSpeechVoices[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kDisableSpeechSynthesis[];
++
++// API blocking
++COMPONENT_EXPORT(UNGOOGLED) extern const char kDisableGamepadAPI[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kDisableBluetoothAPI[];
++COMPONENT_EXPORT(UNGOOGLED) extern const char kDisableUSBAPI[];
++
+ }
+
+ #endif  // THIRD_PARTY_UNGOOGLED_FINGERPRINTING_SWITCHES_H_

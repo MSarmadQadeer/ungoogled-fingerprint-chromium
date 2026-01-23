@@ -1,0 +1,186 @@
+# Audio Context Fingerprinting Noise for Profile Grid
+# Adds noise to AudioContext fingerprinting vectors
+# --fingerprinting-audio-noise enables audio fingerprint deception
+# --fingerprint-audio-seed=12345 sets deterministic noise seed per profile
+
+--- a/third_party/blink/renderer/modules/webaudio/analyser_node.cc
++++ b/third_party/blink/renderer/modules/webaudio/analyser_node.cc
+@@ -24,6 +24,9 @@
+
+ #include "third_party/blink/renderer/modules/webaudio/analyser_node.h"
+
++#include "base/command_line.h"
++#include "base/rand_util.h"
++#include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_analyser_options.h"
+ #include "third_party/blink/renderer/modules/webaudio/analyser_handler.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
+@@ -31,6 +34,41 @@
+
+ namespace blink {
+
++// Command-line switches for audio fingerprinting
++const char kFingerprintingAudioNoise[] = "fingerprinting-audio-noise";
++const char kFingerprintAudioSeed[] = "fingerprint-audio-seed";
++
++// Get noise factor for audio fingerprinting
++double GetAudioNoiseFactor() {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++
++  if (!command_line->HasSwitch(kFingerprintingAudioNoise)) {
++    return 0.0;
++  }
++
++  // Use seed if provided, otherwise random
++  uint64_t seed = 0;
++  if (command_line->HasSwitch(kFingerprintAudioSeed)) {
++    base::StringToUint64(
++        command_line->GetSwitchValueASCII(kFingerprintAudioSeed), &seed);
++  } else {
++    seed = base::RandUint64();
++  }
++
++  // Create deterministic noise factor from seed
++  // Range: -0.0001 to +0.0001 (imperceptible but changes fingerprint)
++  double noise = ((double)(seed % 10000) / 10000.0 - 0.5) * 0.0002;
++  return noise;
++}
++
++// Apply noise to a float buffer
++void ApplyAudioNoise(float* buffer, unsigned length, double noise_factor) {
++  if (noise_factor == 0.0) return;
++
++  for (unsigned i = 0; i < length; i++) {
++    buffer[i] = buffer[i] * (1.0 + noise_factor);
++  }
++}
++
+ AnalyserNode* AnalyserNode::Create(BaseAudioContext& context,
+                                    ExceptionState& exception_state) {
+   DCHECK(IsMainThread());
+@@ -64,6 +102,12 @@ void AnalyserNode::getFloatFrequencyData(
+
+   AnalyserHandler& handler = static_cast<AnalyserHandler&>(Handler());
+   handler.GetFloatFrequencyData(array.View(), context()->currentTime());
++
++  // Apply fingerprint noise if enabled
++  double noise_factor = GetAudioNoiseFactor();
++  if (noise_factor != 0.0) {
++    ApplyAudioNoise(array.Data(), array.length(), noise_factor);
++  }
+ }
+
+ void AnalyserNode::getByteFrequencyData(NotShared<DOMUint8Array> array) {
+@@ -81,6 +125,12 @@ void AnalyserNode::getFloatTimeDomainDat
+
+   AnalyserHandler& handler = static_cast<AnalyserHandler&>(Handler());
+   handler.GetFloatTimeDomainData(array.View());
++
++  // Apply fingerprint noise if enabled
++  double noise_factor = GetAudioNoiseFactor();
++  if (noise_factor != 0.0) {
++    ApplyAudioNoise(array.Data(), array.length(), noise_factor);
++  }
+ }
+
+ void AnalyserNode::getByteTimeDomainData(NotShared<DOMUint8Array> array) {
+--- a/third_party/blink/renderer/modules/webaudio/dynamics_compressor_node.cc
++++ b/third_party/blink/renderer/modules/webaudio/dynamics_compressor_node.cc
+@@ -24,6 +24,9 @@
+
+ #include "third_party/blink/renderer/modules/webaudio/dynamics_compressor_node.h"
+
++#include "base/command_line.h"
++#include "base/rand_util.h"
++#include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_dynamics_compressor_options.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
+ #include "third_party/blink/renderer/modules/webaudio/audio_node_input.h"
+@@ -32,6 +35,29 @@
+
+ namespace blink {
+
++// Command-line switches
++const char kFingerprintingAudioNoiseCompressor[] = "fingerprinting-audio-noise";
++const char kFingerprintAudioSeedCompressor[] = "fingerprint-audio-seed";
++
++// Get noise factor for compressor reduction fingerprinting
++double GetCompressorNoiseFactor() {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++
++  if (!command_line->HasSwitch(kFingerprintingAudioNoiseCompressor)) {
++    return 0.0;
++  }
++
++  uint64_t seed = 0;
++  if (command_line->HasSwitch(kFingerprintAudioSeedCompressor)) {
++    base::StringToUint64(
++        command_line->GetSwitchValueASCII(kFingerprintAudioSeedCompressor), &seed);
++  } else {
++    seed = base::RandUint64();
++  }
++
++  return ((double)(seed % 10000) / 10000.0 - 0.5) * 0.0002;
++}
++
+ DynamicsCompressorHandler&
+ DynamicsCompressorNode::GetDynamicsCompressorHandler() const {
+   return static_cast<DynamicsCompressorHandler&>(Handler());
+@@ -81,7 +107,14 @@ AudioParam* DynamicsCompressorNode::rele
+ }
+
+ float DynamicsCompressorNode::reduction() const {
+-  return GetDynamicsCompressorHandler().ReductionValue();
++  float reduction_value = GetDynamicsCompressorHandler().ReductionValue();
++
++  // Apply noise if enabled
++  double noise_factor = GetCompressorNoiseFactor();
++  if (noise_factor != 0.0) {
++    reduction_value = reduction_value * (1.0 + noise_factor);
++  }
++
++  return reduction_value;
+ }
+
+ void DynamicsCompressorNode::Trace(Visitor* visitor) const {
+--- a/third_party/blink/renderer/modules/webaudio/oscillator_node.cc
++++ b/third_party/blink/renderer/modules/webaudio/oscillator_node.cc
+@@ -24,6 +24,9 @@
+
+ #include "third_party/blink/renderer/modules/webaudio/oscillator_node.h"
+
++#include "base/command_line.h"
++#include "base/rand_util.h"
++#include "base/strings/string_number_conversions.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_oscillator_options.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_oscillator_type.h"
+@@ -35,6 +38,28 @@
+
+ namespace blink {
+
++// Command-line switches
++const char kFingerprintingAudioNoiseOsc[] = "fingerprinting-audio-noise";
++const char kFingerprintAudioSeedOsc[] = "fingerprint-audio-seed";
++
++// Get tiny frequency offset for oscillator fingerprinting
++double GetOscillatorFrequencyOffset() {
++  const base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
++
++  if (!command_line->HasSwitch(kFingerprintingAudioNoiseOsc)) {
++    return 0.0;
++  }
++
++  uint64_t seed = 0;
++  if (command_line->HasSwitch(kFingerprintAudioSeedOsc)) {
++    base::StringToUint64(
++        command_line->GetSwitchValueASCII(kFingerprintAudioSeedOsc), &seed);
++  }
++
++  // Tiny frequency offset (imperceptible but changes fingerprint)
++  return ((double)(seed % 1000) / 1000.0 - 0.5) * 0.00001;
++}
++
+ OscillatorNode::OscillatorNode(BaseAudioContext& context,
+                                const V8OscillatorType::Enum type,
+                                PeriodicWave* wave_table)
